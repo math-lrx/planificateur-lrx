@@ -739,6 +739,36 @@ function telechargerJSON(nomFichier, data){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+function modeleJSONVierge(){
+  return {
+    id: "RPxxx",
+    nom: "Nom du plat",
+    sous_titre: null,
+    source: "D'où vient cette recette (site, livre, ou 'Recette personnelle')",
+    typage_generique: ["A"],
+    vegetarien: false,
+    saisonnalite: ["toute_saison"],
+    temps: { preparation_min: 20, cuisson_min: 30, total_min: 50 },
+    ustensiles: ["Poêle", "Casserole"],
+    conservation_note: null,
+    allergenes_note: "Mentionne ici les allergènes probables (gluten, lait, œuf, fruits à coque...), ou null si aucun.",
+    classification_conservation_reconsommation: {
+      necessite_temps_confortable_preparation: true,
+      compatible_rechauffage_simple_ou_froid: true,
+      compatible_rechauffage_complement_rapide: false,
+      complement_rapide_description: null
+    },
+    ingredients: [
+      { nom: "Nom de l'ingrédient", quantite_par_portion: 65, unite: "g", placeholder: "nom_ingredient" }
+    ],
+    instructions: [
+      { titre: "Titre court de l'étape", contenu: "Texte de l'étape. Utilise {nom_ingredient} pour renvoyer à un ingrédient si tu veux que sa quantité s'affiche automatiquement selon le nombre de portions choisi." }
+    ]
+  };
+}
+function exempleJSONRempli(){
+  return RAW_CORPUS.find(r=>r.id==='R001') || RAW_CORPUS[0];
+}
 
 function renderGuideCorpus(){
   const mesImports = lireStockage('corpus_utilisateur') || [];
@@ -762,69 +792,55 @@ function renderGuideCorpus(){
 
     <div class="carnet-page">
       <div class="carnet-section-title" style="margin-top:0;">Ajouter une recette avec l'aide d'une IA (mode d'emploi)</div>
-      <p style="font-size:14px;line-height:1.6;">Cet outil ne comprend qu'un seul format : des fichiers <strong>JSON</strong> structurés d'une façon précise. Bonne nouvelle : tu n'as pas besoin de savoir écrire du JSON toi-même. N'importe quel assistant IA de conversation (Claude, ChatGPT, Gemini, ou autre — au choix, indépendamment de cet outil) peut le faire à ta place, à condition de lui donner les bonnes instructions. C'est exactement ce que cette page t'aide à faire, étape par étape.</p>
+      <p style="font-size:14px;line-height:1.6;">Cet outil ne comprend qu'un seul format : des fichiers <strong>JSON</strong> structurés d'une façon précise. Bonne nouvelle : tu n'as pas besoin de savoir écrire du JSON toi-même. N'importe quel assistant IA de conversation (Claude, ChatGPT, Gemini, ou autre — au choix, indépendamment de cet outil) peut le faire à ta place, à condition de lui donner les bonnes instructions et les bons repères. C'est exactement ce que cette page t'aide à faire, étape par étape.</p>
+
+      <div class="carnet-conservation">🔢 <strong>Avant de commencer, choisis ta numérotation.</strong> Le corpus actuel utilise les identifiants R001 à R090 et RT001 à RT023. Pour ne jamais entrer en collision avec une recette existante (ce qui remplacerait accidentellement l'une des tiennes), choisis dès maintenant un système d'identifiants qui t'est propre et garde-le pour toutes tes prochaines recettes : soit tu poursuis la numérotation à la suite (R200, R201... ou RT100, RT101... pour du Thermomix), soit tu utilises un préfixe personnel, par exemple "RP" pour "Recette Personnelle" (RP001, RP002...). L'important est de rester cohérent d'une recette à l'autre.</div>
 
       <div class="carnet-section-title">Étape 1 — Récupérer le texte de ta recette</div>
       <p style="font-size:14px;line-height:1.6;">Selon la forme sous laquelle tu as ta recette, la façon de commencer diffère. Choisis ton cas :</p>
 
       <p style="font-size:14.5px;line-height:1.6;"><strong>📄 Cas 1 — Ta recette est déjà du texte</strong> (site internet, document Word, note sur ton téléphone, recette tapée quelque part).<br>
-      C'est le cas le plus simple : passe directement à l'étape 2. Tu n'as rien à faire de plus, tu vas simplement copier ce texte.</p>
+      C'est le cas le plus simple : passe directement à l'étape 2.</p>
 
       <p style="font-size:14.5px;line-height:1.6;"><strong>📷 Cas 2 — Ta recette n'existe qu'en photo ou en image</strong> (photo d'un livre de cuisine, capture d'écran, image envoyée par quelqu'un).<br>
-      Les assistants IA modernes savent "lire" une image et en extraire le texte. Ouvre une conversation avec un assistant IA (Claude, ChatGPT...), joins-lui directement la photo, et demande-lui simplement : <em>"Peux-tu me retranscrire fidèlement le texte de cette recette (titre, ingrédients avec quantités, étapes) ?"</em>. Il te renverra le texte de la recette — passe alors à l'étape 2 avec ce texte.</p>
+      Demander directement à une IA de lire une photo fonctionne parfois mal : texte mal reconnu, lignes mélangées, quantités faussées — pour une recette, une erreur de lecture peut fausser un dosage entier. Mieux vaut passer par un outil spécialisé de reconnaissance de texte (OCR), gratuit et utilisable directement dans le navigateur, sans rien installer :</p>
+      <ol style="font-size:14.5px;line-height:1.8;padding-left:22px;">
+        <li>Va sur <strong>tools.pdf24.org/en/ocr-pdf</strong> (outil gratuit et sans inscription).</li>
+        <li>Dépose directement ta photo dans la zone prévue — l'outil accepte aussi bien une image qu'un PDF.</li>
+        <li>Si une langue est demandée, choisis "Français", puis lance la reconnaissance de texte.</li>
+        <li>Télécharge le fichier obtenu : un PDF où le texte de la recette est cette fois réellement exploitable (sélectionnable, copiable).</li>
+      </ol>
+      <p style="font-size:14.5px;line-height:1.6;">Si tu pars déjà d'un PDF non océrisé (par exemple un livre de recettes numérisé), utilise directement ce même outil avec ce PDF, sans étape supplémentaire. Une fois ce PDF obtenu, passe à l'étape 2 : tu le donneras directement en pièce jointe à ton assistant IA, sans avoir besoin de recopier le texte à la main.</p>
 
       <p style="font-size:14.5px;line-height:1.6;"><strong>🎙️ Cas 3 — Ta recette est uniquement en audio ou en vidéo</strong> (mémo vocal, vidéo de recette, réseau social).<br>
       Il faut d'abord la transformer en texte (on appelle ça une "transcription"). Deux façons de faire :</p>
       <ul style="font-size:14.5px;line-height:1.7;padding-left:22px;">
-        <li>Le plus simple : regarde ou écoute la vidéo/l'audio, et tape toi-même la recette en résumant ce qui est dit (titre, ingrédients, étapes) dans un document ou une note.</li>
-        <li>Si tu as un fichier audio ou vidéo exploitable : certains assistants IA acceptent qu'on leur transmette un fichier audio, ou tu peux utiliser une application de "sous-titres automatiques" / transcription (souvent intégrée aux téléphones récents) pour obtenir le texte, que tu copieras ensuite.</li>
+        <li>Le plus simple : regarde ou écoute la vidéo/l'audio, et tape toi-même la recette en résumant ce qui est dit (titre, ingrédients, étapes) dans un document.</li>
+        <li>Si tu as un fichier audio ou vidéo exploitable : certains assistants IA acceptent qu'on leur transmette un fichier audio, ou tu peux utiliser une application de "sous-titres automatiques" (souvent intégrée aux téléphones récents) pour obtenir le texte.</li>
       </ul>
-      <p style="font-size:14.5px;line-height:1.6;">Une fois que tu as, d'une façon ou d'une autre, un texte décrivant ta recette (titre, ingrédients, étapes) — quelle que soit sa forme, même approximative — passe à l'étape 2.</p>
+      <p style="font-size:14.5px;line-height:1.6;">Une fois que tu as un texte ou un fichier décrivant ta recette (même approximatif), passe à l'étape 2.</p>
 
-      <div class="carnet-section-title">Étape 2 — Demander à une IA de transformer ce texte en fiche JSON</div>
-      <p style="font-size:14px;line-height:1.6;">Ouvre une conversation avec l'assistant IA de ton choix. Colle-lui <strong>le texte ci-dessous en premier</strong> (c'est l'instruction technique), puis colle <strong>ta recette</strong> juste en dessous, dans le même message. Utilise le bouton "🖨️ Imprimer / PDF" en haut de cette page si tu préfères garder ce mode d'emploi sous la main sur papier ou dans un fichier séparé.</p>
-      <div class="carnet-conservation" style="background:#f7f4ec;border-color:#e2d9c1;color:var(--encre);font-family:ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;">Transforme la recette que je te donne ci-dessous en un objet JSON respectant exactement cette structure (garde les noms de champs en français, tels quels) :
+      <div class="carnet-section-title">Étape 2 — Télécharger le modèle et un exemple</div>
+      <p style="font-size:14px;line-height:1.6;">Pour un résultat fiable, ne demande pas juste "transforme ce texte en JSON" à l'IA — sans repère précis, même une IA compétente peut inventer une structure différente de celle attendue par l'outil. Donne-lui plutôt un modèle vide à respecter et un exemple réel à imiter. Télécharge ces deux fichiers, tu les joindras à ta conversation avec l'IA à l'étape suivante :</p>
+      <button class="cta secondary" id="telechargerModeleVierge" style="max-width:420px;">📥 Télécharger le modèle JSON vierge</button>
+      <button class="cta secondary" id="telechargerExempleRempli" style="max-width:420px;">📥 Télécharger un exemple de recette déjà remplie</button>
 
-{
-  "id": "R999",
-  "nom": "Nom du plat",
-  "sous_titre": null,
-  "source": "D'où vient cette recette (site, livre, ou 'Recette personnelle')",
-  "typage_generique": ["A"],
-  "vegetarien": false,
-  "saisonnalite": ["toute_saison"],
-  "temps": { "preparation_min": 20, "cuisson_min": 30, "total_min": 50 },
-  "ustensiles": ["Poêle", "Casserole"],
-  "conservation_note": null,
-  "allergenes_note": "Mentionne ici les allergènes probables (gluten, lait, œuf, fruits à coque...), ou null si aucun.",
-  "classification_conservation_reconsommation": {
-    "necessite_temps_confortable_preparation": true,
-    "compatible_rechauffage_simple_ou_froid": true,
-    "compatible_rechauffage_complement_rapide": false,
-    "complement_rapide_description": null
-  },
-  "ingredients": [
-    { "nom": "Nom de l'ingrédient", "quantite_par_portion": 65, "unite": "g", "placeholder": "nom_ingredient" }
-  ],
-  "instructions": [
-    { "titre": "Titre court de l'étape", "contenu": "Texte de l'étape. Utilise {nom_ingredient} pour renvoyer à un ingrédient si tu veux que sa quantité s'affiche automatiquement selon le nombre de portions choisi." }
-  ]
-}
+      <div class="carnet-section-title">Étape 3 — Demander à l'IA de générer la fiche</div>
+      <p style="font-size:14px;line-height:1.6;">Ouvre une conversation avec l'assistant IA de ton choix (Claude, ChatGPT, Gemini...), et joins-lui <strong>trois fichiers dans le même message</strong> : le modèle vierge, l'exemple rempli, et le fichier de ta recette (le PDF issu de l'étape 1 si tu es parti d'une photo, ou directement ton document texte). Colle ensuite ce texte dans le message. Utilise le bouton "🖨️ Imprimer / PDF" en haut de cette page si tu préfères garder ce mode d'emploi sous la main.</p>
+      <div class="carnet-conservation" style="background:#f7f4ec;border-color:#e2d9c1;color:var(--encre);font-family:ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;font-size:12px;line-height:1.7;white-space:pre-wrap;">Je te joins trois fichiers : un modèle JSON vierge (structure exacte à respecter), un exemple de recette déjà remplie dans ce même format (pour que tu voies le niveau de détail attendu), et le fichier de la recette que je veux convertir.
 
-Consignes précises :
-- "id" : invente un identifiant unique commençant par "R" suivi d'un numéro (ex. "R101"). S'il s'agit d'une recette prévue pour un robot Thermomix, fais-le commencer par "RT" à la place (ex. "RT024"), et indique dans les étapes les réglages entre ** ** (ex. **10 min/100°C/vitesse 2**).
+À partir de ces trois documents, transforme la recette du troisième fichier en un objet JSON qui respecte EXACTEMENT la même structure que les deux premiers fichiers (mêmes noms de champs, en français, aucun champ oublié, aucun champ ajouté). Voici les règles à respecter :
+
+- "id" : invente un identifiant qui ne risque pas d'entrer en collision avec une recette existante (je te préciserai le système à utiliser si besoin). S'il s'agit d'une recette prévue pour un robot Thermomix, fais-le commencer par "RT", et indique les réglages entre ** ** dans le texte des étapes (ex. **10 min/100°C/vitesse 2**).
 - "typage_generique" : choisis une ou plusieurs lettres parmi A, B, C, D, E, F selon le temps de préparation nécessaire : A/E/F = recette longue, préparée en grande quantité pour être reconsommée plusieurs fois dans la semaine ; B/C/D = recette rapide, préparée et mangée le jour même.
 - "quantite_par_portion" : donne la quantité nécessaire pour UNE SEULE portion (pas pour toute la recette). Une portion correspond en général à un repas pour un adulte.
 - "unite" : g, ml, cl, L, cs (cuillère à soupe), cc (cuillère à café), ou "pièce(s)" pour les ingrédients à l'unité.
-- Pour un ingrédient déjà présent dans toutes les cuisines (sel, poivre, huile...), tu peux ajouter "categorie": "à ajouter soi-même" et laisser "quantite_par_portion": null si la quantité n'a pas d'importance.
+- Pour un ingrédient déjà présent dans toutes les cuisines (sel, poivre, huile...), ajoute "categorie": "à ajouter soi-même" et laisse "quantite_par_portion": null si la quantité n'a pas d'importance.
 - "placeholder" : uniquement si tu veux que la quantité de cet ingrédient s'affiche automatiquement dans le texte d'une étape via {placeholder} — sinon, tu peux l'omettre.
 - "classification_conservation_reconsommation" : décris si la recette nécessite un moment "confortable" pour être cuisinée (true) ou si elle est rapide (false), si elle se mange bien réchauffée ou froide plus tard (compatible_rechauffage_simple_ou_froid), et si un petit geste frais est nécessaire à chaque service (compatible_rechauffage_complement_rapide, avec sa description).
-- Réponds uniquement avec l'objet JSON final, sans texte autour, prêt à être copié-collé.
+- Réponds uniquement avec l'objet JSON final, sans texte autour, prêt à être enregistré directement comme fichier .json.</div>
 
-Voici ma recette à transformer :
-[colle ici le texte de ta recette]</div>
-
-      <div class="carnet-section-title">Étape 3 — Ajouter la fiche dans l'outil</div>
+      <div class="carnet-section-title">Étape 4 — Ajouter la fiche dans l'outil</div>
       <p style="font-size:14px;line-height:1.6;">Copie la réponse de l'IA (l'objet JSON), colle-la dans un éditeur de texte simple (Bloc-notes, TextEdit...), et enregistre le fichier avec l'extension <strong>.json</strong>. Retourne ensuite sur l'écran d'accueil de cet outil, ouvre "Gérer le corpus", et dépose ce fichier dans la zone d'import. C'est tout — ta recette rejoint le corpus, sans jamais écraser les autres.</p>
       <p style="font-size:12.5px;color:#8a8172;">Astuce : si le fichier ne s'importe pas, la cause la plus fréquente est un JSON légèrement mal formé (une virgule oubliée, par exemple). Recolle le message d'erreur ou le fichier à ton assistant IA en lui demandant de vérifier que le JSON est valide.</p>
     </div>
@@ -1368,6 +1384,10 @@ function attachEvents(){
   if(telechargerCorpusComplet) telechargerCorpusComplet.addEventListener('click', ()=>{ telechargerJSON('corpus_complet.json', corpusBrutComplet()); });
   const telechargerMesImports = document.getElementById('telechargerMesImports');
   if(telechargerMesImports) telechargerMesImports.addEventListener('click', ()=>{ telechargerJSON('mes_recettes_importees.json', lireStockage('corpus_utilisateur') || []); });
+  const telechargerModeleVierge = document.getElementById('telechargerModeleVierge');
+  if(telechargerModeleVierge) telechargerModeleVierge.addEventListener('click', ()=>{ telechargerJSON('modele_vierge.json', modeleJSONVierge()); });
+  const telechargerExempleRempli = document.getElementById('telechargerExempleRempli');
+  if(telechargerExempleRempli) telechargerExempleRempli.addEventListener('click', ()=>{ telechargerJSON('exemple_rempli.json', exempleJSONRempli()); });
 
   const toggleCorpusPanel = document.getElementById('toggleCorpusPanel');
   if(toggleCorpusPanel) toggleCorpusPanel.addEventListener('click', ()=>{ state.corpusPanelOuvert = !state.corpusPanelOuvert; state.corpusMessage = null; render(); });
