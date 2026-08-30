@@ -314,6 +314,11 @@ function nouvelIdSemaine(){
 }
 const FENETRE_SEMAINES = 3;
 let historique = [];
+let snapshotActif = null; // quand défini, on consulte une semaine archivée plutôt que l'état en cours
+function modeLabelActuel(){
+  if(snapshotActif) return snapshotActif.modeLabel;
+  return state.mode==='custom' ? 'Semaine sur-mesure' : (state.mode==='cas1' ? 'Cas 1' : 'Cas 2');
+}
 function chargerHistorique(){
   historique = lireStockage('historique_semaines') || [];
   render();
@@ -324,8 +329,10 @@ function idsChoisisActuels(){
 }
 function enregistrerSemaineActuelle(){
   const aujourdhui = new Date().toISOString().slice(0,10);
+  const selections = selectionsActuelles().map(s=>({ label:s.label, recipeId:s.recipeId, portions:s.portions }));
+  const lignesPlanning = construireLignesPlanningActuel();
   historique = historique.filter(e => e.sessionId !== state.sessionId);
-  historique.push({ date: aujourdhui, sessionId: state.sessionId, recettesChoisies: idsChoisisActuels() });
+  historique.push({ date: aujourdhui, sessionId: state.sessionId, recettesChoisies: idsChoisisActuels(), modeLabel: modeLabelActuel(), selections, lignesPlanning });
   historique = historique.slice(-20);
   ecrireStockage('historique_semaines', historique);
 }
@@ -406,6 +413,7 @@ let state = {
   corpusPanelOuvert: false,
   corpusMessage: null,
   vue: 'planificateur',
+  archiveEcran: 'carnet',
   consultation: { etape:'portions', portions:4, recetteId:null, filtres:{ vegetarien:null, viandes:[], saisons:[], rythme:null } },
 };
 function initCustomIfNeeded(){
@@ -617,18 +625,108 @@ function fmtTemps(min){
   if(min>=60){ const h=Math.floor(min/60), m=min%60; return m ? `${h} h ${m} min` : `${h} h`; }
   return `${min} min`;
 }
-const RAYON_MOTS = [
-  ['Frais & protéines', ['poulet','bœuf','boeuf','porc','viande','jambon','œuf','oeuf','thon','lard','volaille']],
-  ['Fromage & matières grasses', ['fromage','cheddar','comté','parmesan','feta','emmental','brillat-savarin','burrata','ricotta','mozzarella','beurre','crème','huile']],
-  ['Féculents & légumineuses', ['riz','pâtes','tagliatelle','penne','nouille','épeautre','quinoa','lentille','haricot rouge','haricot blanc','haricot vert','pain','pita','chapelure','farine','vermicelle','conchiglione','pois chiche','pois cassé','fève','coquillette']],
-  ['Fruits & légumes', ['tomate','concombre','poivron','carotte','oignon','échalote','ail','céleri','champignon','avocat','citron','salade','épinard','courgette','brocoli','poireau','figue','persil','coriandre','menthe','aneth','origan','basilic','thym','ciboulette','roquette','pomme verte','aubergine','pomme de terre']],
-  ['Épicerie', ['sauce','vinaigre','épice','cumin','paprika','curcuma','harissa','moutarde','sirop','cassonade','sucre','bouillon','vin ','bière','concentré','maïs','lait','yaourt','curry','tahini','pignon','guacamole','crème de basilic']],
-];
-function classifierRayon(nom){
-  const n = nom.toLowerCase();
-  for(const [rayon, mots] of RAYON_MOTS){ if(mots.some(m=>n.includes(m))) return rayon; }
-  return 'Épicerie';
+const MOTS_INVARIANTS = new Set(['pois','brebis','tapis','anis','cassis','maïs','riz','pâtes']);
+function normaliserMot(mot){
+  if(MOTS_INVARIANTS.has(mot)) return mot;
+  if(/eaux$/.test(mot)) return mot.replace(/eaux$/,'eau');
+  if(/s$/.test(mot)) return mot.slice(0,-1);
+  if(/x$/.test(mot)) return mot.slice(0,-1);
+  return mot;
 }
+function normaliserPourRecherche(nom){
+  return nom.toLowerCase().replace(/[a-zàâäéèêëîïôöùûüç]+/gi, mot => normaliserMot(mot));
+}
+function contientMot(nomNormalise, motCle){
+  const echappe = normaliserPourRecherche(motCle).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const re = new RegExp('(^|[^a-zàâäéèêëîïôöùûüç])' + echappe + '([^a-zàâäéèêëîïôöùûüç]|$)', 'i');
+  return re.test(nomNormalise);
+}
+/* Passe 1 : expressions précises à vérifier avant les mots simples, pour éviter les confusions
+   entre un produit frais et sa forme transformée (ex. "bouillon de bœuf" n'est pas de la viande,
+   "lait de coco" et "crème de basilic" ne sont pas des produits laitiers). */
+const RAYON_MOTS_PRECIS = [
+  ['Épicerie', [
+    ['bouillon', ['bouillon','fond de légumes','fond de volaille','fond de veau','cube de bouillon']],
+    ['tomate transformée', ['tomates concassées','concentré de tomate','concentré de tomates','sauce tomate','chair de tomates','concassée de tomates','coulis de tomate','pulpe de tomate']],
+    ['lait de coco', ['lait de coco']],
+    ['crème de basilic', ['crème de basilic']],
+    ['épice', ["piment d'espelette",'piment oiseau']],
+  ]],
+];
+/* Passe 2 : mots entiers (avec frontières de mot, pour éviter par exemple que "chorizo"
+   ne soit détecté comme contenant "riz"). Premier groupe qui correspond = rayon retenu,
+   la "clé" sert ensuite à regrouper visuellement les variantes d'un même ingrédient. */
+const RAYON_MOTS = [
+  ['Fruits & légumes', [
+    ['tomate', ['tomate']], ['concombre', ['concombre']], ['poivron', ['poivron']],
+    ['piment frais', ['piment jalapeño','piment vert','piment rouge']],
+    ['carotte', ['carotte']], ['oignon', ['oignon','cébette']], ['échalote', ['échalote']], ['ail', ['ail']],
+    ['céleri', ['céleri']], ['champignon', ['champignon','morille','portobello']],
+    ['avocat', ['avocat']], ['citron', ['citron']],
+    ['salade verte', ['salade','roquette','mesclun','laitue','mâche']],
+    ['épinard', ['épinard']], ['courgette', ['courgette']], ['brocoli', ['brocoli']],
+    ['poireau', ['poireau']], ['figue', ['figue']], ['persil', ['persil']],
+    ['coriandre', ['coriandre']], ['menthe', ['menthe']], ['aneth', ['aneth']],
+    ['origan', ['origan']], ['basilic', ['basilic']], ['thym', ['thym']], ['romarin', ['romarin']],
+    ['sauge', ['sauge']], ['ciboulette', ['ciboulette']], ['cerfeuil', ['cerfeuil']], ['estragon', ['estragon']],
+    ['petit pois', ['petit pois']],
+    ['pomme de terre', ['pomme de terre','pommes de terre','grenaille']],
+    ['pomme (fruit)', ['pomme verte']], ['aubergine', ['aubergine']],
+    ['citronnelle', ['citronnelle']], ['gingembre frais', ['gingembre']],
+    ['navet', ['navet']], ['radis', ['radis']], ['chou', ['chou rouge','chou blanc','chou']],
+    ['fruit frais', ['ananas','pastèque','raisin']], ['courge', ['potimarron']],
+  ]],
+  ['Boucherie & poissonnerie', [
+    ['bœuf', ['bœuf','boeuf']], ['veau', ['veau']], ['porc', ['porc']], ['agneau', ['agneau']],
+    ['canard', ['canard']], ['poulet', ['poulet','volaille','poularde']], ['jambon', ['jambon']],
+    ['lardons', ['lardons','pancetta','bacon']], ['lard', ['lard']],
+    ['saucisse & chorizo', ['saucisse','chorizo','chipolata']],
+    ['poisson', ['poisson','saumon','thon']], ['fruits de mer', ['crevette']],
+    ['viande', ['viande']],
+  ]],
+  ['Crèmerie', [
+    ['fromage', ['fromage','cheddar','comté','parmesan','feta','emmental','brillat-savarin','burrata','mozzarella','ricotta','reblochon','pecorino']],
+    ['beurre', ['beurre']], ['crème', ['crème']], ['lait', ['lait']], ['yaourt', ['yaourt']],
+    ['œuf', ['œuf','oeuf']],
+  ]],
+  ['Féculents & légumineuses', [
+    ['riz', ['riz']],
+    ['pâtes', ['pâtes','tagliatelle','penne','pennes','nouille','vermicelle','conchiglione','coquillette','linguine','macaroni','spaghetti','rigatoni','orzo','lasagne','gnocchi','tortellini']],
+    ['céréale', ['épeautre','quinoa','boulgour','couscous','semoule','millet']],
+    ['légumineuse', ['lentille','pois chiche','pois cassé','fève','haricot rouge','haricot blanc','haricot vert']],
+    ['pain', ['pain','pita','chapelure','croûton','tortilla']],
+    ['farine', ['farine','maïzena']], ['levure', ['levure']],
+  ]],
+  ['Épicerie', [
+    ['huile', ['huile']], ['vinaigre', ['vinaigre']],
+    ['sauce condiment', ['soja','nuoc','sauce poisson','sauce anglaise','sauce barbecue','sauce tahini','mayonnaise','tapenade','pesto']],
+    ['épice', ['cumin','paprika','curcuma','harissa','curry','massalé','colombo','safran','garam masala','muscade','cannelle','épice','laurier']],
+    ['moutarde', ['moutarde']],
+    ['sel & poivre', ['sel','poivre']],
+    ['sucre & sirop', ['sirop','cassonade','sucre','miel']],
+    ['vin & bière', ['vin rouge','vin jaune','bière']],
+    ['conserve', ['maïs','olive','câpres']],
+    ['fruits secs & graines', ['pignon','noisette','noix','amande','cranberrie','pistache','fenouil','cacahuète']],
+    ['condiment exotique', ['tahini','guacamole']],
+    ['eau', ['eau']], ['glaçons', ['glaçon']],
+  ]],
+];
+function classifierRayonEtCle(nom){
+  const n = nom.toLowerCase();
+  const nNorm = normaliserPourRecherche(nom);
+  for(const [rayon, groupes] of RAYON_MOTS_PRECIS){
+    for(const [cle, variantes] of groupes){
+      if(variantes.some(v=>n.includes(v))) return { rayon, cle };
+    }
+  }
+  for(const [rayon, groupes] of RAYON_MOTS){
+    for(const [cle, variantes] of groupes){
+      if(variantes.some(v=>contientMot(nNorm, v))) return { rayon, cle };
+    }
+  }
+  return { rayon: 'Épicerie', cle: n };
+}
+function classifierRayon(nom){ return classifierRayonEtCle(nom).rayon; }
 const VIANDE_MOTS = [
   ['Bœuf', ['bœuf','boeuf']],
   ['Porc', ['porc','jambon','lard']],
@@ -680,6 +778,7 @@ function fmtPortions(n){ return Number.isInteger(n) ? n : n.toFixed(2).replace(/
 
 /* Sélections unifiées (Cas 1/Cas 2 lettres, Sur-mesure lots) */
 function selectionsActuelles(){
+  if(snapshotActif) return snapshotActif.selections.map(s=>({...s}));
   const portions = computePortionsParLettre();
   if(state.mode === 'custom'){
     return construirePlanSurMesure().filter(l=>!l.orpheline).map(lot=>({
@@ -697,11 +796,16 @@ function genererListe(){
   selectionsActuelles().forEach(sel=>{
     if(!sel.recipeId) return;
     const recette = CORPUS.find(r=>r.id===sel.recipeId);
+    if(!recette) return;
     recette.ingredients.forEach(ing=>{
       if(ing.qte==null){ sansQuantite.add(ing.nom); return; }
       const u = baseUnit(ing.unite);
       const key = ing.nom + '|' + u;
-      if(!totaux[key]) { totaux[key] = { nom:ing.nom, unite:u, qte:0, rayon: ing.base ? 'Condiments & basiques' : classifierRayon(ing.nom) }; provenance[key] = new Set(); }
+      if(!totaux[key]) {
+        const { rayon, cle } = ing.base ? { rayon:'Condiments & basiques', cle: ing.nom.toLowerCase() } : classifierRayonEtCle(ing.nom);
+        totaux[key] = { nom:ing.nom, unite:u, qte:0, rayon, cle };
+        provenance[key] = new Set();
+      }
       totaux[key].qte += ing.qte * sel.portions;
       provenance[key].add(`${sel.label} · ${recette.nom}`);
     });
@@ -722,11 +826,12 @@ const app = document.getElementById('app');
 
 let dernierRenduClef = null;
 function render(){
-  const clefActuelle = state.vue + ':' + state.step + ':' + (state.vue==='consultation' ? state.consultation.etape : '');
+  const clefActuelle = state.vue + ':' + state.step + ':' + (state.vue==='consultation' ? state.consultation.etape : '') + ':' + (state.vue==='archive' ? state.archiveEcran + ':' + (snapshotActif?snapshotActif.sessionId:'') : '');
   const changementEcran = clefActuelle !== dernierRenduClef;
   dernierRenduClef = clefActuelle;
   if(state.vue === 'consultation'){ app.innerHTML = renderConsultation(); attachEvents(); if(changementEcran) window.scrollTo(0,0); return; }
   if(state.vue === 'guide'){ app.innerHTML = renderGuideCorpus(); attachEvents(); if(changementEcran) window.scrollTo(0,0); return; }
+  if(state.vue === 'archive'){ app.innerHTML = (state.archiveEcran==='courses' ? renderStep6() : renderStep5()); attachEvents(); if(changementEcran) window.scrollTo(0,0); return; }
   let html = `<header class="top">
     <div class="brand-row"><img src="${LOGO_7_AU_MENU}" alt=""><span class="brand-word"><span class="accent">7</span> au Menu <span class="accent">!</span></span></div>
     <p class="brand-subtitle" style="font-weight:700;color:var(--ardoise);margin-top:6px;">Version famille LRX</p>
@@ -991,9 +1096,16 @@ function renderHistoriqueRecap(){
     </div>
     ${tri.map(e=>{
       const noms = e.recettesChoisies.map(id=>{ const r = CORPUS.find(x=>x.id===id); return r?r.nom:id; }).join(' · ');
-      return `<div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#5b544a;padding:8px 0;border-top:1px dashed #ddd2b8;">
-        <div style="flex:1;"><strong style="color:var(--ardoise);font-family:ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;">${e.date}</strong><br>${noms}</div>
-        <button class="retire-btn" data-effacer-semaine="${e.sessionId}" title="Supprimer cette semaine de l'historique">✕</button>
+      const consultable = !!(e.selections && e.lignesPlanning);
+      return `<div style="padding:8px 0;border-top:1px dashed #ddd2b8;">
+        <div style="display:flex;align-items:flex-start;gap:8px;font-size:12px;color:#5b544a;">
+          <div style="flex:1;"><strong style="color:var(--ardoise);font-family:ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;">${e.date}</strong><br>${noms}</div>
+          <button class="retire-btn" data-effacer-semaine="${e.sessionId}" title="Supprimer cette semaine de l'historique">✕</button>
+        </div>
+        ${consultable ? `<div style="display:flex;gap:8px;margin-top:6px;">
+          <button class="retire-btn" data-voir-carnet="${e.sessionId}">📖 Carnet</button>
+          <button class="retire-btn" data-voir-courses="${e.sessionId}">🛒 Courses</button>
+        </div>` : `<div style="font-size:11px;color:#9a9284;font-style:italic;margin-top:4px;">Détails non disponibles pour cette semaine (enregistrée avant cette fonctionnalité).</div>`}
       </div>`;
     }).join('')}
   </div>`;
@@ -1123,15 +1235,15 @@ function renderStep3(){
 
 function renderStep4(){
   const { parRayon, sansQuantite } = genererListe();
-  const ordreRayons = ['Fruits & légumes','Féculents & légumineuses','Frais & protéines','Fromage & matières grasses','Épicerie','Condiments & basiques'];
+  const ordreRayons = ['Fruits & légumes','Boucherie & poissonnerie','Crèmerie','Féculents & légumineuses','Épicerie','Condiments & basiques'];
   let html = `<div class="ticket-wrap"><section style="padding-top:8px;"><h2>4. Ticket de courses</h2>
-  <p class="sub">Coche au fur et à mesure. Un ingrédient sous deux formes différentes reste séparé.</p></section>
+  <p class="sub">Coche au fur et à mesure. Un ingrédient sous deux formes différentes reste séparé, mais regroupé juste à côté.</p></section>
   <div class="ticket"><h3>Courses — semaine prochaine</h3><div class="meta">${state.mode==='custom' ? 'Semaine sur-mesure' : (state.mode==='cas1'?'Cas 1':'Cas 2')}</div>`;
   ordreRayons.forEach(rayon=>{
     const items = parRayon[rayon];
     if(!items || !items.length) return;
     html += `<div class="rayon"><div class="rayon-title">${rayon}</div>`;
-    items.sort((a,b)=>a.nom.localeCompare(b.nom)).forEach(item=>{
+    items.sort((a,b)=> (a.cle||'').localeCompare(b.cle||'') || a.nom.localeCompare(b.nom)).forEach(item=>{
       const itemKey = item.nom+'|'+item.unite;
       const checked = state.cochees.has(itemKey);
       html += `<label class="item-row ${checked?'checked':''}">
@@ -1150,44 +1262,58 @@ function renderStep4(){
   return html;
 }
 
-function renderEmploiDuTemps(){
-  const jours = [];
+function construireLignesPlanningActuel(){
+  const lignes = [];
   if(state.mode === 'custom'){
     const lots = construirePlanSurMesure();
     SLOTS.forEach(s=>{
-      let grp = jours.find(j=>j.jour===s.jour);
-      if(!grp){ grp = {jour:s.jour, midi:null, soir:null}; jours.push(grp); }
       const lot = lots.find(l=>l.slots.some(x=>x.id===s.id));
-      grp[s.moment.toLowerCase()] = lot ? { lot, slotInfo: lot.slots.find(x=>x.id===s.id) } : null;
-    });
-    function cellule(entry){
-      if(!entry) return `<span class="planning-empty">Repas retiré / —</span>`;
-      const { lot, slotInfo } = entry;
-      if(lot.orpheline) return `<span class="planning-empty">⚠ Conflit de planification</span>`;
+      if(!lot){ lignes.push({ jour:s.jour, moment:s.moment, vide:true }); return; }
+      if(lot.orpheline){ lignes.push({ jour:s.jour, moment:s.moment, conflit:true }); return; }
+      const slotInfo = lot.slots.find(x=>x.id===s.id);
       const recette = CORPUS.find(r=>r.id===state.choixLots[lot.id]);
-      const nom = recette ? recette.nom : '(recette à choisir)';
-      const prep = slotInfo.role==='prep' || slotInfo.role==='prep_rapide';
-      return `<span class="planning-recipe">${nom}${prep?' <span class="prep-tag">🔪</span>':''}</span>
-        <span class="planning-qty">${fmtPortions(slotInfo.portionsRepas)} portion${slotInfo.portionsRepas>1?'s':''}${prep?' préparées':(slotInfo.role==='rapide_reconso'?' + complément':' consommées')}</span>`;
-    }
-    return `<table class="planning-table"><thead><tr><th>Jour</th><th>Midi</th><th>Soir</th></tr></thead>
-      <tbody>${jours.map(g=>`<tr><td class="jour-cell">${g.jour}</td><td>${cellule(g.midi)}</td><td>${cellule(g.soir)}</td></tr>`).join('')}</tbody></table>`;
+      lignes.push({
+        jour:s.jour, moment:s.moment,
+        nomRecette: recette ? recette.nom : '(recette à choisir)',
+        portions: slotInfo.portionsRepas,
+        prep: slotInfo.role==='prep' || slotInfo.role==='prep_rapide',
+        complement: slotInfo.role==='rapide_reconso',
+      });
+    });
+  } else {
+    SLOTS.forEach(s=>{
+      const qte = slotConsumption(s.id);
+      if(qte===0){ lignes.push({ jour:s.jour, moment:s.moment, retire:true }); return; }
+      const recette = CORPUS.find(r=>r.id===state.choix[s.letter]);
+      lignes.push({
+        jour:s.jour, moment:s.moment,
+        nomRecette: recette ? `${s.letter} · ${recette.nom}` : '(recette à choisir)',
+        portions: qte, prep: s.prep, complement: false,
+      });
+    });
   }
-  SLOTS.forEach(s=>{
-    let grp = jours.find(j=>j.jour===s.jour);
-    if(!grp){ grp = {jour:s.jour, midi:null, soir:null}; jours.push(grp); }
-    grp[s.moment.toLowerCase()] = s;
+  return lignes;
+}
+function renderTablePlanning(lignes){
+  const jours = [];
+  lignes.forEach(l=>{
+    let grp = jours.find(j=>j.jour===l.jour);
+    if(!grp){ grp = { jour:l.jour, midi:null, soir:null }; jours.push(grp); }
+    grp[l.moment.toLowerCase()] = l;
   });
-  function celluleFixe(s){
-    if(!s) return `<span class="planning-empty">—</span>`;
-    const qte = slotConsumption(s.id);
-    if(qte===0) return `<span class="planning-empty">Repas retiré</span>`;
-    const recette = CORPUS.find(r=>r.id===state.choix[s.letter]);
-    return `<span class="planning-recipe">${s.letter} · ${recette.nom}${s.prep?' <span class="prep-tag">🔪</span>':''}</span>
-      <span class="planning-qty">${fmtPortions(qte)} portion${qte>1?'s':''}${s.prep?' préparées':' consommées'}</span>`;
+  function cellule(l){
+    if(!l) return `<span class="planning-empty">—</span>`;
+    if(l.vide || l.retire) return `<span class="planning-empty">Repas retiré / —</span>`;
+    if(l.conflit) return `<span class="planning-empty">⚠ Conflit de planification</span>`;
+    return `<span class="planning-recipe">${l.nomRecette}${l.prep?' <span class="prep-tag">🔪</span>':''}</span>
+      <span class="planning-qty">${fmtPortions(l.portions)} portion${l.portions>1?'s':''}${l.prep?' préparées':(l.complement?' + complément':' consommées')}</span>`;
   }
   return `<table class="planning-table"><thead><tr><th>Jour</th><th>Midi</th><th>Soir</th></tr></thead>
-    <tbody>${jours.map(g=>`<tr><td class="jour-cell">${g.jour}</td><td>${celluleFixe(g.midi)}</td><td>${celluleFixe(g.soir)}</td></tr>`).join('')}</tbody></table>`;
+    <tbody>${jours.map(g=>`<tr><td class="jour-cell">${g.jour}</td><td>${cellule(g.midi)}</td><td>${cellule(g.soir)}</td></tr>`).join('')}</tbody></table>`;
+}
+function renderEmploiDuTemps(){
+  if(snapshotActif) return renderTablePlanning(snapshotActif.lignesPlanning);
+  return renderTablePlanning(construireLignesPlanningActuel());
 }
 
 function renderFicheRecette(recette, p){
@@ -1224,36 +1350,41 @@ function renderStep5(){
   const selections = selectionsActuelles().filter(s=>s.recipeId);
   let html = `<div class="carnet-wrap">
     <div class="no-print carnet-topbar">
-      <button class="cta" id="backTo4">← Retour à la liste de courses</button>
+      <button class="cta" id="${snapshotActif?'archiveRetourHistorique':'backTo4'}">← ${snapshotActif ? "Retour à l'historique" : 'Retour à la liste de courses'}</button>
       <button class="cta secondary" id="imprimerCarnet">🖨️ PDF</button>
     </div>
     <div class="carnet-cover" style="margin-top:20px;">
-      <div class="eyebrow">Carnet de la semaine</div><h2>Recettes à cuisiner</h2>
-      <p>${state.mode==='custom'?'Semaine sur-mesure':(state.mode==='cas1'?'Cas 1':'Cas 2')} — ${selections.length} recettes</p>
+      <div class="eyebrow">Carnet de la semaine${snapshotActif?' · Archive':''}</div><h2>Recettes à cuisiner</h2>
+      <p>${modeLabelActuel()} — ${selections.length} recettes</p>
     </div>
     <div class="carnet-page"><div class="carnet-section-title" style="margin-top:0;">Emploi du temps de la semaine</div>${renderEmploiDuTemps()}</div>`;
-  selections.forEach(sel=>{ html += renderFicheRecette(CORPUS.find(r=>r.id===sel.recipeId), sel.portions); });
-  html += `<div class="no-print" style="padding:0 20px;"><button class="cta" id="semaineSuivante">Planifier la semaine suivante →</button></div></div>`;
+  selections.forEach(sel=>{
+    const recette = CORPUS.find(r=>r.id===sel.recipeId);
+    if(recette) html += renderFicheRecette(recette, sel.portions);
+  });
+  html += snapshotActif
+    ? `<div class="no-print" style="padding:0 20px;"><button class="cta secondary" id="archiveRetourHistorique2">← Retour à l'historique</button></div></div>`
+    : `<div class="no-print" style="padding:0 20px;"><button class="cta" id="semaineSuivante">Planifier la semaine suivante →</button></div></div>`;
   return html;
 }
 
 function renderStep6(){
   const { parRayon, sansQuantite } = genererListe();
-  const ordreRayons = ['Fruits & légumes','Féculents & légumineuses','Frais & protéines','Fromage & matières grasses','Épicerie','Condiments & basiques'];
+  const ordreRayons = ['Fruits & légumes','Boucherie & poissonnerie','Crèmerie','Féculents & légumineuses','Épicerie','Condiments & basiques'];
   let html = `<div class="carnet-wrap">
     <div class="no-print carnet-topbar">
-      <button class="cta" id="backTo4depuis6">← Retour à la liste de courses</button>
+      <button class="cta" id="${snapshotActif?'archiveRetourHistorique3':'backTo4depuis6'}">← ${snapshotActif ? "Retour à l'historique" : 'Retour à la liste de courses'}</button>
       <button class="cta secondary" id="imprimerCourses">🖨️ PDF</button>
     </div>
-    <div class="carnet-cover" style="margin-top:20px;"><div class="eyebrow">Carnet de la semaine</div><h2>Liste de courses</h2>
-      <p>${state.mode==='custom'?'Semaine sur-mesure':(state.mode==='cas1'?'Cas 1':'Cas 2')}</p></div>
+    <div class="carnet-cover" style="margin-top:20px;"><div class="eyebrow">Carnet de la semaine${snapshotActif?' · Archive':''}</div><h2>Liste de courses</h2>
+      <p>${modeLabelActuel()}</p></div>
     <div class="carnet-page"><div class="carnet-section-title" style="margin-top:0;">Emploi du temps de la semaine</div>${renderEmploiDuTemps()}</div>
     <div class="carnet-page">`;
   ordreRayons.forEach(rayon=>{
     const items = parRayon[rayon];
     if(!items || !items.length) return;
     html += `<div class="carnet-section-title" style="margin-top:20px;">${rayon}</div>`;
-    items.sort((a,b)=>a.nom.localeCompare(b.nom)).forEach(item=>{
+    items.sort((a,b)=> (a.cle||'').localeCompare(b.cle||'') || a.nom.localeCompare(b.nom)).forEach(item=>{
       html += `<div class="carnet-ing-row"><span>☐ ${item.nom}<span style="display:block;font-size:10px;color:#9a9284;">${item.provenance.join(' + ')}</span></span><span class="q">${fmtQte(item.qte, item.unite)}</span></div>`;
     });
   });
@@ -1340,6 +1471,7 @@ function renderConsultationFiche(){
 
 function reinitialiserPourNouvelleSemaine(){
   state.vue = 'planificateur';
+  snapshotActif = null;
   state.step = 1; state.mode = null; state.selectionMode = null;
   state.choix = {}; state.choixLots = {}; state.custom = {}; state.dispo = {}; state.rapideReconso = {};
   state.retraitsFixes = new Set(); state.cochees = new Set(); state.sessionId = nouvelIdSemaine();
@@ -1416,6 +1548,26 @@ function attachEvents(){
       historique = historique.filter(e=>e.sessionId !== btn.dataset.effacerSemaine);
       ecrireStockage('historique_semaines', historique);
       render();
+    });
+  });
+  document.querySelectorAll('[data-voir-carnet]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const entree = historique.find(e=>e.sessionId === btn.dataset.voirCarnet);
+      if(!entree) return;
+      snapshotActif = entree; state.vue = 'archive'; state.archiveEcran = 'carnet'; render();
+    });
+  });
+  document.querySelectorAll('[data-voir-courses]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const entree = historique.find(e=>e.sessionId === btn.dataset.voirCourses);
+      if(!entree) return;
+      snapshotActif = entree; state.vue = 'archive'; state.archiveEcran = 'courses'; render();
+    });
+  });
+  ['archiveRetourHistorique','archiveRetourHistorique2','archiveRetourHistorique3'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.addEventListener('click', ()=>{
+      snapshotActif = null; state.vue = 'planificateur'; state.step = 1; render();
     });
   });
 
