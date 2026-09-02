@@ -88,6 +88,12 @@
   .profil-actions{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;}
   .profil-note{font-size:12.5px;color:#5b544a;background:var(--papier);border-radius:var(--radius);padding:8px 12px;margin:10px 0;}
   .dispo-reconso-toggle{display:flex;align-items:center;gap:5px;font-size:11px;color:#5b544a;margin-top:4px;}
+  .multiprep-row{margin-top:8px;width:100%;}
+  .multiprep-row label{display:block;font-size:11.5px;color:#5b544a;margin-bottom:5px;}
+  .multiprep-choix{display:flex;gap:6px;}
+  .multiprep-btn{width:34px;height:34px;border-radius:50%;border:1.5px solid #d8cfb8;background:var(--papier);color:var(--ardoise);font-weight:700;font-size:14px;cursor:pointer;}
+  .multiprep-btn.active{background:var(--moutarde);border-color:var(--moutarde);color:var(--ardoise);}
+  .multiprep-aide{font-size:11px;color:#8a8172;font-style:italic;margin:6px 0 0;}
   .criteria-card{background:var(--papier);border:1px solid #E7E1D2;border-radius:var(--radius);padding:16px;margin-top:16px;box-shadow:0 1px 3px rgba(43,38,32,.05);}
   .criteria-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px dashed #ddd2b8;}
   .criteria-row:first-of-type{border-top:none;}
@@ -206,6 +212,18 @@
   .confirm-box .confirm-actions button{flex:1;padding:11px;border-radius:var(--radius);border:none;font-family:inherit;font-weight:700;font-size:14px;cursor:pointer;}
   .confirm-box .confirm-cancel{background:transparent;border:1.5px solid rgba(26,39,43,.28) !important;color:var(--ardoise);}
   .confirm-box .confirm-ok{background:var(--grad-marque);color:var(--ardoise);}
+  .changelog-box{max-width:420px;max-height:80vh;display:flex;flex-direction:column;}
+  .changelog-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:12px;font-size:15px;color:var(--ardoise);}
+  .changelog-head span{font-size:12px;color:#8a8172;font-weight:400;}
+  .changelog-list{overflow-y:auto;margin-bottom:14px;padding-right:4px;}
+  .changelog-entry{padding:10px 0;border-top:1px dashed #ddd2b8;}
+  .changelog-entry:first-child{border-top:none;padding-top:0;}
+  .changelog-entry-head{font-family:ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;font-size:12px;font-weight:700;color:var(--ardoise);margin-bottom:4px;}
+  .changelog-entry-head span{font-weight:400;color:#8a8172;margin-left:6px;}
+  .changelog-entry ul{margin:0;padding-left:18px;font-size:13px;line-height:1.5;color:var(--encre);}
+  .changelog-entry li{margin-bottom:4px;}
+  header.top .version-btn{background:none;border:none;color:#8a8172;font-family:ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;font-size:11px;padding:0;margin-top:10px;cursor:pointer;text-decoration:underline;text-underline-offset:2px;}
+  header.top .version-btn:hover{color:var(--ardoise);}
   @media print{
     *{box-shadow:none !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
     body{background:#fff;}
@@ -276,6 +294,74 @@ function ecrireStockage(cle, valeur){
 let CORPUS = RAW_CORPUS.map(adapterRecette);
 const LOGO_7_AU_MENU = "data:image/png;base64,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";
 const LOGO_7_AU_MENU_SMALL = "data:image/png;base64,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";
+const VERSION_INFO = {
+  version: '2.0',
+  date: '2 septembre 2026',
+  changelog: [
+    { version: '2.0', date: '2 septembre 2026', notes: [
+      "Nouveau : sur un repas « Confortable » en semaine sur-mesure, possibilité de préparer plusieurs plats différents (jusqu'à 3) en une seule session de cuisine. L'outil répartit ensuite automatiquement les repas suivants entre ces plats pour varier les menus, au lieu de manger le même plat plusieurs fois d'affilée.",
+      "Le générateur automatique choisit des plats volontairement différents les uns des autres pour une même session multi-plats.",
+      "Ajout de ce bouton « Version » pour suivre les nouveautés de l'outil.",
+      "Le tableau « emploi du temps de la semaine » est désormais aussi visible et mis à jour en direct à l'étape 3 (choix des recettes), en plus de l'étape 4.",
+      "L'étape 4 s'appelle désormais « Liste de courses » (au lieu de « Ticket de courses »).",
+      "Le récapitulatif « quand préparer, quand consommer » indique désormais la consommation de façon cohérente à chaque repas, y compris le soir même de la préparation.",
+    ]},
+    { version: '1.9', date: 'précédemment', notes: [
+      "Les deux recettes issues d'une lettre scindée (A1/A2, F1/F2) alternent réellement d'un repas à l'autre, plutôt que de se suivre en deux blocs.",
+      "Repère « à congeler » pour les portions consommées 2 jours ou plus après leur préparation.",
+    ]},
+    { version: '1.8', date: 'précédemment', notes: [
+      "La liste de courses n'affiche plus la précision d'usage entre parenthèses (ex. « Ail (sauce tomate) » devient « Ail ») : la provenance déjà indiquée sous chaque ligne suffit à savoir à quoi ça sert.",
+      "Les occurrences d'un même ingrédient, dans la même unité — y compris au singulier et au pluriel — sont désormais additionnées en une seule ligne plutôt que dispersées.",
+    ]},
+    { version: '1.7', date: 'précédemment', notes: [
+      "Scission optionnelle des recettes A et F (celles qui couvrent 4 repas d'affilée) en deux recettes plus courtes, pour plus de variété.",
+    ]},
+    { version: '1.6', date: 'précédemment', notes: [
+      "Historique cliquable : les semaines précédentes peuvent être rouvertes pour consulter à nouveau leur carnet de recettes et leur liste de courses.",
+      "Correction d'un bug qui pouvait faire apparaître un même ingrédient dans deux rubriques différentes de la liste de courses.",
+    ]},
+    { version: '1.5', date: 'précédemment', notes: [
+      "Nouveaux rayons de liste de courses, calqués sur un vrai parcours de supermarché (fruits & légumes, boucherie & poissonnerie, crèmerie, féculents & légumineuses, épicerie), avec un classement par mot entier bien plus fiable.",
+    ]},
+    { version: '1.4', date: 'précédemment', notes: [
+      "Filtre Thermomix (uniquement / aucune recette) pour la semaine.",
+      "Export du corpus et mode d'emploi pas-à-pas pour ajouter une recette avec l'aide d'une IA.",
+      "Bouton d'accueil toujours visible, quel que soit l'écran.",
+    ]},
+    { version: '1.3', date: 'précédemment', notes: [
+      "Thème graphique « 7 au Menu ! » repris pour la version famille LRX, avec logo.",
+    ]},
+    { version: '1.2', date: 'précédemment', notes: [
+      "Intégration complète du corpus (111 recettes), badges végétarien / Thermomix / recette riche cumulables.",
+      "Détection automatique des contraintes de capacité de bol pour les recettes Thermomix.",
+    ]},
+    { version: '1.1', date: 'précédemment', notes: [
+      "Fonctionnalité de consultation libre d'une recette du corpus, indépendante de la planification de la semaine.",
+    ]},
+    { version: '1.0', date: 'précédemment', notes: [
+      "Première version : planification Cas 1 / Cas 2 / Sur-mesure, sélection manuelle ou automatique des recettes, liste de courses, carnet de recettes.",
+    ]},
+  ],
+};
+function afficherChangelog(){
+  const overlay = document.createElement('div');
+  overlay.className = 'confirm-overlay';
+  overlay.innerHTML = `<div class="confirm-box changelog-box">
+    <div class="changelog-head"><strong>Planificateur famille LRX — version ${VERSION_INFO.version}</strong><span>${VERSION_INFO.date}</span></div>
+    <div class="changelog-list">
+      ${VERSION_INFO.changelog.map(entry=>`<div class="changelog-entry">
+        <div class="changelog-entry-head">Version ${entry.version} <span>${entry.date}</span></div>
+        <ul>${entry.notes.map(n=>`<li>${n}</li>`).join('')}</ul>
+      </div>`).join('')}
+    </div>
+    <div class="confirm-actions"><button class="confirm-ok" type="button" style="flex:1;">Fermer</button></div>
+  </div>`;
+  document.body.appendChild(overlay);
+  const fermer = () => { overlay.remove(); };
+  overlay.addEventListener('click', (e)=>{ if(e.target === overlay) fermer(); });
+  overlay.querySelector('.confirm-ok').addEventListener('click', fermer);
+}
 function fusionnerCorpus(recettesBrutesImportees){
   const parId = {};
   RAW_CORPUS.forEach(r=>{ parId[r.id] = r; });
@@ -447,6 +533,7 @@ let state = {
   filtreThermomix: null,
   avertissementAuto: null,
   scission: { A:false, F:false },
+  multiPrep: {},
   auto: { nbVege:2, saisons: toutesSaisonsCorpus(), eviterRepetition:true },
   choix: {},
   cochees: new Set(),
@@ -463,6 +550,7 @@ function initCustomIfNeeded(){
     state.custom[s.id] = defautAttendance(s.id, 'cas2');
     state.dispo[s.id] = DISPO_DEFAUT[s.id];
     state.rapideReconso[s.id] = false;
+    state.multiPrep[s.id] = 1;
   });
 }
 function attendanceFor(slotId){
@@ -485,30 +573,63 @@ function computePortionsParLettre(){
 /* Construction des lots (mode sur-mesure) */
 function construirePlanSurMesure(){
   initCustomIfNeeded();
-  const lots = [];
-  let lotActif = null;
+  /* Passe 1 : on regroupe les repas en "chaînes" — une chaîne démarre à un repas confortable ou
+     rapide, et absorbe tous les repas de reconsommation qui suivent jusqu'à la prochaine
+     préparation. */
+  const chaines = [];
+  let chaineActive = null;
   SLOTS.forEach(s=>{
     const portionsRepas = portionsSlot(state.custom[s.id]);
     if(portionsRepas === 0) return;
     const dispo = state.dispo[s.id];
     if(dispo === 'confortable'){
-      lotActif = { id:'lot'+(lots.length+1), slots:[{...s, portionsRepas, role:'prep'}] };
-      lots.push(lotActif);
+      const nbRecettes = Math.max(1, Math.min(3, state.multiPrep[s.id] || 1));
+      chaineActive = { premier:{...s, portionsRepas, role:'prep'}, suite:[], nbRecettes };
+      chaines.push(chaineActive);
     } else if(dispo === 'rapide'){
       const reconso = state.rapideReconso[s.id];
-      if(reconso && lotActif){
-        lotActif.slots.push({...s, portionsRepas, role:'rapide_reconso'});
+      if(reconso && chaineActive){
+        chaineActive.suite.push({...s, portionsRepas, role:'rapide_reconso'});
       } else {
-        lotActif = { id:'lot'+(lots.length+1), slots:[{...s, portionsRepas, role:'prep_rapide'}] };
-        lots.push(lotActif);
+        chaineActive = { premier:{...s, portionsRepas, role:'prep_rapide'}, suite:[], nbRecettes:1 };
+        chaines.push(chaineActive);
       }
     } else {
-      if(lotActif){
-        lotActif.slots.push({...s, portionsRepas, role:'reconso'});
+      if(chaineActive){
+        chaineActive.suite.push({...s, portionsRepas, role:'reconso'});
       } else {
-        lots.push({ id:'orph'+s.id, slots:[{...s, portionsRepas, role:'orpheline'}], orpheline:true });
+        chaines.push({ orpheline:true, slot:{...s, portionsRepas, role:'orpheline'} });
       }
     }
+  });
+  /* Passe 2 : une chaîne "confortable" avec plusieurs plats demandés est éclatée en autant de
+     lots frères. Le premier récupère le repas du soir même (celui qu'on mange en sortant de
+     cuisine) ; les suivants démarrent à vide. Les repas de reconsommation qui suivent sont
+     ensuite répartis en tournante entre tous les lots frères — décalée d'un cran pour que le
+     repas juste après la cuisine soit déjà un plat différent de celui du soir même, plutôt
+     qu'une redite immédiate. Un lot frère qui ne récupère finalement aucun repas de reconsommation
+     (pas assez de repas suivants pour tous les alimenter) est simplement écarté. */
+  const lots = [];
+  chaines.forEach((chaine, idx)=>{
+    if(chaine.orpheline){
+      lots.push({ id:'orph'+chaine.slot.id, slots:[chaine.slot], orpheline:true });
+      return;
+    }
+    const n = chaine.nbRecettes || 1;
+    if(n <= 1){
+      lots.push({ id:'lot'+(idx+1), slots:[chaine.premier, ...chaine.suite] });
+      return;
+    }
+    const sousLots = [];
+    for(let i=0;i<n;i++){
+      sousLots.push({
+        id: `lot${idx+1}${String.fromCharCode(97+i)}`,
+        slots: i===0 ? [chaine.premier] : [{...chaine.premier, portionsRepas:0, phantom:true}],
+        groupePrep: idx+1, indexDansGroupe: i, tailleGroupe: n,
+      });
+    }
+    chaine.suite.forEach((s, i)=>{ sousLots[(i+1) % n].slots.push(s); });
+    sousLots.forEach(sl=>{ if(portionsLot(sl) > 0) lots.push(sl); });
   });
   return lots;
 }
@@ -524,7 +645,11 @@ function candidatsPourLot(lot){
     return true;
   }));
 }
-function labelLot(lot){ const p = lot.slots[0]; return `${p.jour} ${p.moment.toLowerCase()}`; }
+function labelLot(lot){
+  const p = lot.slots[0];
+  const base = `${p.jour} ${p.moment.toLowerCase()}`;
+  return lot.tailleGroupe ? `${base} — plat ${lot.indexDansGroupe+1}/${lot.tailleGroupe}` : base;
+}
 
 function choisirParmiMeilleurs(opts, scoreFn){
   let meilleurScore = Infinity;
@@ -914,6 +1039,7 @@ function render(){
     <div class="brand-row"><img src="${LOGO_7_AU_MENU}" alt=""><span class="brand-word"><span class="accent">7</span> au Menu <span class="accent">!</span></span></div>
     <p class="brand-subtitle" style="font-weight:700;color:var(--ardoise);margin-top:6px;">Version famille LRX</p>
     <p class="brand-subtitle">Du scénario de la semaine jusqu'au carnet de recettes prêt à cuisiner.</p>
+    <button class="version-btn no-print" id="ouvrirChangelog" type="button">ℹ️ Version ${VERSION_INFO.version} — voir les nouveautés</button>
   </header>
   <div class="stepper">${[1,2,3,4,5].map(n=>`<div class="dot ${state.step===n?'active':state.step>n?'done':''}"></div>`).join('')}</div>`;
   if(state.step===1) html += renderStep1();
@@ -1124,6 +1250,11 @@ function renderGrilleCustom(){
         <div class="dispo-row">
           ${Object.entries(DISPO_LABELS).map(([key,label])=>`<button class="dispo-btn ${dispo===key?'active':''}" data-dispo-slot="${s.id}" data-dispo-val="${key}">${label}</button>`).join('')}
           ${dispo==='rapide' ? `<label class="dispo-reconso-toggle"><input type="checkbox" data-rapide-reconso="${s.id}" ${state.rapideReconso[s.id]?'checked':''}> Prolonger le lot précédent (complément rapide) plutôt qu'une nouvelle recette</label>` : ''}
+          ${dispo==='confortable' ? `<div class="multiprep-row">
+            <label>Combien de plats différents veux-tu préparer à ce moment-là ?</label>
+            <div class="multiprep-choix">${[1,2,3].map(n=>`<button class="multiprep-btn ${(state.multiPrep[s.id]||1)===n?'active':''}" data-multiprep-slot="${s.id}" data-multiprep-val="${n}">${n}</button>`).join('')}</div>
+            ${(state.multiPrep[s.id]||1) > 1 ? `<p class="multiprep-aide">Ces plats seront répartis automatiquement sur les repas suivants pour varier les menus.</p>` : ''}
+          </div>` : ''}
         </div>
       </div>`;
     });
@@ -1249,23 +1380,33 @@ function renderCalendrierLettre(l){
   rows = rows.concat(slots.map(s=>{
     const qte = slotConsumption(s.id);
     if(qte===0) return null;
-    return `<div class="calendrier-row ${s.prep?'prep':''}">${s.prep?'🔪':'🍽'} <strong>${s.jour} ${s.moment.toLowerCase()}</strong> — ${fmtPortions(qte)} portion${qte>1?'s':''}${s.prep?' (préparation du lot)':''}</div>`;
+    const icone = s.prep ? '🔪 🍽' : '🍽';
+    return `<div class="calendrier-row ${s.prep?'prep':''}">${icone} <strong>${s.jour} ${s.moment.toLowerCase()}</strong> — ${fmtPortions(qte)} portion${qte>1?'s':''} consommée${qte>1?'s':''}${s.prep?' (jour de préparation)':''}</div>`;
   }).filter(Boolean));
   return `<div class="calendrier">${rows.join('')}</div>`;
 }
 function renderCalendrierLot(lot){
-  const rows = lot.slots.map(s=>{
-    let icone = '🍽', texte = 'consommées';
-    if(s.role==='prep' || s.role==='prep_rapide'){ icone='🔪'; texte='préparées'; }
-    if(s.role==='rapide_reconso'){ icone='🍽+'; texte='consommées avec complément rapide'; }
-    return `<div class="calendrier-row ${s.role==='prep'||s.role==='prep_rapide'?'prep':''}">${icone} <strong>${s.jour} ${s.moment.toLowerCase()}</strong> — ${fmtPortions(s.portionsRepas)} portion${s.portionsRepas>1?'s':''} ${texte}</div>`;
-  });
+  let rows = [];
+  if(lot.slots[0] && lot.slots[0].phantom){
+    const p = lot.slots[0];
+    rows.push(`<div class="calendrier-row prep">🔪 <strong>${p.jour} ${p.moment.toLowerCase()}</strong> — préparé en même temps que les autres plats de cette session, sans portion consommée ce soir-là</div>`);
+  }
+  rows = rows.concat(lot.slots.filter(s=>!s.phantom).map(s=>{
+    const estPrep = s.role==='prep' || s.role==='prep_rapide';
+    let texte = `${fmtPortions(s.portionsRepas)} portion${s.portionsRepas>1?'s':''} consommée${s.portionsRepas>1?'s':''}`;
+    if(estPrep) texte += ' (jour de préparation)';
+    if(s.role==='rapide_reconso') texte += ' + complément rapide';
+    const icone = estPrep ? '🔪 🍽' : '🍽';
+    return `<div class="calendrier-row ${estPrep?'prep':''}">${icone} <strong>${s.jour} ${s.moment.toLowerCase()}</strong> — ${texte}</div>`;
+  }));
   return `<div class="calendrier">${rows.join('')}</div>`;
 }
 
 function renderStep3(){
   let html = `<section><h2>3. Une recette par ${state.mode==='custom'?'lot':'lettre'}</h2><p class="sub">${state.selectionMode==='auto' ? 'Proposition générée — modifie ce que tu veux avant de continuer.' : 'Les quantités viennent de ta semaine choisie à l\'étape 1.'}</p>
-  ${state.avertissementAuto ? `<div class="warn" style="background:var(--papier);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;">${state.avertissementAuto}</div>` : ''}`;
+  ${state.avertissementAuto ? `<div class="warn" style="background:var(--papier);border-radius:var(--radius);padding:10px 14px;margin-bottom:14px;">${state.avertissementAuto}</div>` : ''}
+  <div class="carnet-section-title" style="margin-top:4px;">Emploi du temps de la semaine</div>${renderEmploiDuTemps()}
+  `;
 
   if(state.mode === 'custom'){
     const lots = construirePlanSurMesure();
@@ -1334,7 +1475,7 @@ function renderStep3(){
 function renderStep4(){
   const { parRayon, sansQuantite } = genererListe();
   const ordreRayons = ['Fruits & légumes','Boucherie & poissonnerie','Crèmerie','Féculents & légumineuses','Épicerie','Condiments & basiques'];
-  let html = `<div class="ticket-wrap"><section style="padding-top:8px;"><h2>4. Ticket de courses</h2>
+  let html = `<div class="ticket-wrap"><section style="padding-top:8px;"><h2>4. Liste de courses</h2>
   <p class="sub">Coche au fur et à mesure. Un ingrédient sous deux formes différentes reste séparé, mais regroupé juste à côté.</p>
   <div class="carnet-section-title" style="margin-top:4px;">Emploi du temps de la semaine</div>${renderEmploiDuTemps()}
   </section>
@@ -1589,7 +1730,7 @@ function reinitialiserPourNouvelleSemaine(){
   state.vue = 'planificateur';
   snapshotActif = null;
   state.step = 1; state.mode = null; state.selectionMode = null;
-  state.choix = {}; state.choixLots = {}; state.custom = {}; state.dispo = {}; state.rapideReconso = {};
+  state.choix = {}; state.choixLots = {}; state.custom = {}; state.dispo = {}; state.rapideReconso = {}; state.multiPrep = {};
   state.retraitsFixes = new Set(); state.cochees = new Set(); state.sessionId = nouvelIdSemaine();
   state.consultation.etape = 'portions'; state.consultation.recetteId = null;
   state.avertissementAuto = null;
@@ -1689,6 +1830,8 @@ function attachEvents(){
     });
   });
 
+  const ouvrirChangelog = document.getElementById('ouvrirChangelog');
+  if(ouvrirChangelog) ouvrirChangelog.addEventListener('click', afficherChangelog);
   const ouvrirGuideCorpus = document.getElementById('ouvrirGuideCorpus');
   if(ouvrirGuideCorpus) ouvrirGuideCorpus.addEventListener('click', ()=>{ state.vue = 'guide'; render(); });
   const guideRetourAccueil = document.getElementById('guideRetourAccueil');
@@ -1750,10 +1893,17 @@ function attachEvents(){
     btn.addEventListener('click', ()=>{ const id = btn.dataset.retire; state.custom[id].retire = !state.custom[id].retire; render(); });
   });
   document.querySelectorAll('[data-dispo-slot]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{ state.dispo[btn.dataset.dispoSlot] = btn.dataset.dispoVal; render(); });
+    btn.addEventListener('click', ()=>{
+      state.dispo[btn.dataset.dispoSlot] = btn.dataset.dispoVal;
+      if(btn.dataset.dispoVal !== 'confortable') state.multiPrep[btn.dataset.dispoSlot] = 1;
+      render();
+    });
   });
   document.querySelectorAll('[data-rapide-reconso]').forEach(cb=>{
     cb.addEventListener('change', ()=>{ state.rapideReconso[cb.dataset.rapideReconso] = cb.checked; render(); });
+  });
+  document.querySelectorAll('[data-multiprep-slot]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{ state.multiPrep[btn.dataset.multiprepSlot] = parseInt(btn.dataset.multiprepVal,10); render(); });
   });
   document.querySelectorAll('[data-retire-fixe]').forEach(btn=>{
     btn.addEventListener('click', ()=>{ const id = btn.dataset.retireFixe; if(state.retraitsFixes.has(id)) state.retraitsFixes.delete(id); else state.retraitsFixes.add(id); render(); });
