@@ -175,6 +175,8 @@
   .planning-recipe{font-weight:600;color:var(--encre);}
   .planning-recipe .prep-tag{color:var(--moutarde);font-weight:700;}
   .planning-qty{display:block;font-family:ui-monospace, 'SF Mono', 'Cascadia Code', 'Roboto Mono', Menlo, Consolas, monospace;font-size:10.5px;color:#8a8172;margin-top:2px;}
+  .planning-prep-secondaire{display:block;margin-top:6px;padding:4px 8px;background:var(--moutarde);color:var(--ardoise);border-radius:4px;font-size:11px;font-weight:700;}
+  .planning-congelation{display:block;margin-top:5px;font-size:10.5px;color:#3d6b8a;background:#e8f1f6;border-radius:4px;padding:3px 7px;}
   .planning-empty{color:#c7bfa8;}
   .carnet-topbar{position:sticky;top:0;z-index:20;background:var(--papier);padding:14px 20px;display:flex;gap:10px;box-shadow:0 2px 8px rgba(43,38,32,.12);border-bottom:1px solid #ECE6D6;}
   .carnet-topbar .cta{margin-top:0;flex:1;}
@@ -304,7 +306,7 @@ function appliquerFiltreThermomix(liste){
   if(state.filtreThermomix === 'aucune') return liste.filter(r=>!r.estThermomix);
   return liste;
 }
-function recettesPourLettre(l){ return appliquerFiltreThermomix(CORPUS.filter(r=>r.typageGenerique.includes(l))); }
+function recettesPourLettre(l){ return appliquerFiltreThermomix(CORPUS.filter(r=>r.typageGenerique.includes(lettreBase(l)))); }
 function toutesSaisonsCorpus(){ const s=new Set(); CORPUS.forEach(r=>r.saisonnalite.forEach(x=>s.add(x))); return Array.from(s).sort(); }
 
 /* Historique persistant (fenêtre glissante) */
@@ -325,7 +327,7 @@ function chargerHistorique(){
 }
 function idsChoisisActuels(){
   if(state.mode === 'custom') return Object.values(state.choixLots).filter(Boolean);
-  return LETTRES.map(l=>state.choix[l]).filter(Boolean);
+  return lettresEffectives().map(l=>state.choix[l]).filter(Boolean);
 }
 function enregistrerSemaineActuelle(){
   const aujourdhui = new Date().toISOString().slice(0,10);
@@ -387,6 +389,43 @@ const SLOT_CONSO_FIXES = {
   cas2: {mar_soir:3.5, mer_midi:2.5, mer_soir:3.5, jeu_midi:1, jeu_soir:3.5, ven_midi:1, ven_soir:3.5, sam_midi:3.5, sam_soir:3.5, dim_midi:3.5, dim_soir:3.5, lun_midi:1, lun_soir:3.5, mar2_midi:1},
 };
 const LETTRES = ['A','B','C','D','E','F'];
+/* Scission optionnelle des deux lettres qui couvrent 4 repas d'affilée (A et F) en deux recettes
+   plus courtes, cuisinées la même soirée mais offrant plus de variété. Les deux recettes
+   ALTERNENT réellement d'un repas au suivant (jamais deux repas d'affilée avec le même plat),
+   plutôt que de se succéder en deux blocs — sans jamais changer les quantités totales ni
+   demander une minute de cuisine supplémentaire (tout est cuisiné le même soir). */
+const SCISSION_DEF = {
+  A: { premiereMoitie:['mar_soir','jeu_midi'], secondeMoitie:['mer_midi','jeu_soir'] },
+  F: { premiereMoitie:['dim_soir','lun_soir'], secondeMoitie:['lun_midi','mar2_midi'] },
+};
+/* Décalage, en jours pleins, entre la préparation (toujours le premier créneau de la lettre
+   d'origine) et la consommation de chaque créneau. Sert à repérer les portions qui attendent
+   2 jours ou plus avant d'être mangées, pour lesquelles la congélation est préférable au
+   simple réfrigérateur. */
+const JOUR_OFFSET_SLOT = {
+  mar_soir:0, mer_midi:1, jeu_midi:2, jeu_soir:2,
+  mer_soir:0, ven_midi:1,
+  ven_soir:0, sam_midi:0, sam_soir:0, dim_midi:1,
+  dim_soir:0, lun_midi:1, lun_soir:1, mar2_midi:2,
+};
+function lettreBase(l){ return l.replace(/[12]$/, ''); }
+function lettresEffectives(){
+  const out = [];
+  LETTRES.forEach(l=>{
+    if(SCISSION_DEF[l] && state.scission[l]) out.push(l+'1', l+'2');
+    else out.push(l);
+  });
+  return out;
+}
+function lettreEffectiveDuSlot(slotId){
+  const s = SLOTS.find(x=>x.id===slotId);
+  const l = s.letter;
+  if(SCISSION_DEF[l] && state.scission[l]){
+    if(SCISSION_DEF[l].premiereMoitie.includes(slotId)) return l+'1';
+    if(SCISSION_DEF[l].secondeMoitie.includes(slotId)) return l+'2';
+  }
+  return l;
+}
 
 /* Disponibilité par défaut en mode sur-mesure, calquée sur l'architecture d'origine */
 const DISPO_DEFAUT = {
@@ -407,6 +446,7 @@ let state = {
   selectionMode: null,
   filtreThermomix: null,
   avertissementAuto: null,
+  scission: { A:false, F:false },
   auto: { nbVege:2, saisons: toutesSaisonsCorpus(), eviterRepetition:true },
   choix: {},
   cochees: new Set(),
@@ -435,9 +475,10 @@ function slotConsumption(slotId){
   return SLOT_CONSO_FIXES[state.mode][slotId];
 }
 function computePortionsParLettre(){
-  const totaux = {A:0,B:0,C:0,D:0,E:0,F:0};
-  SLOTS.forEach(s => { totaux[s.letter] += slotConsumption(s.id); });
-  LETTRES.forEach(l => { totaux[l] = Math.round(totaux[l]*100)/100; });
+  const totaux = {};
+  lettresEffectives().forEach(l => { totaux[l] = 0; });
+  SLOTS.forEach(s => { const le = lettreEffectiveDuSlot(s.id); totaux[le] += slotConsumption(s.id); });
+  Object.keys(totaux).forEach(l => { totaux[l] = Math.round(totaux[l]*100)/100; });
   return totaux;
 }
 
@@ -531,6 +572,12 @@ function recetteSimilairePlusProche(recette, autresIds){
   return meilleurScore > SEUIL_ALERTE_SIMILARITE ? meilleur : null;
 }
 
+/* Créneaux disposant d'une petite capacité de cuisson (réchauffage + éventuel geste rapide),
+   telle que décrite dans les disponibilités de cuisine d'origine. */
+const SLOTS_COMPLEMENT_POSSIBLE = new Set(['mer_midi','jeu_soir','lun_soir']);
+function lettreALaChanceDuComplement(l){
+  return SLOTS.some(s=>lettreEffectiveDuSlot(s.id)===l && SLOTS_COMPLEMENT_POSSIBLE.has(s.id));
+}
 function genererPropositionAuto(criteres){
   const recentes = recettesRecentes();
   if(state.mode === 'custom'){
@@ -573,7 +620,7 @@ function genererPropositionAuto(criteres){
   const dejaChoisies = new Set();
   const recettesChoisiesObjets = [];
   const choix = {};
-  const ordreLettres = [...LETTRES].sort((a,b)=> recettesPourLettre(a).length - recettesPourLettre(b).length);
+  const ordreLettres = [...lettresEffectives()].sort((a,b)=> recettesPourLettre(a).length - recettesPourLettre(b).length);
   ordreLettres.forEach(l=>{
     let opts = recettesPourLettre(l);
     const sansDoublon = opts.filter(r=>!dejaChoisies.has(r.id));
@@ -592,11 +639,13 @@ function genererPropositionAuto(criteres){
       if(f.length) opts = f;
     }
     const vegeSoFar = recettesChoisiesObjets.filter(r=>r.vegetarien).length;
+    const chanceComplement = lettreALaChanceDuComplement(l);
     const meilleur = choisirParmiMeilleurs(opts, o=>{
       const v = vegeSoFar + (o.vegetarien?1:0);
       const repet = recentes.has(o.id) ? 1 : 0;
       const maxSim = recettesChoisiesObjets.reduce((m,c)=>Math.max(m, similarite(o,c)), 0);
-      return Math.abs(v-criteres.nbVege) + repet*0.5 + maxSim*3;
+      const bonusComplement = (chanceComplement && o.compatibleComplementRapide) ? -0.6 : 0;
+      return Math.abs(v-criteres.nbVege) + repet*0.5 + maxSim*3 + bonusComplement;
     });
     choix[l] = meilleur.id;
     dejaChoisies.add(meilleur.id);
@@ -671,7 +720,7 @@ const RAYON_MOTS = [
     ['coriandre', ['coriandre']], ['menthe', ['menthe']], ['aneth', ['aneth']],
     ['origan', ['origan']], ['basilic', ['basilic']], ['thym', ['thym']], ['romarin', ['romarin']],
     ['sauge', ['sauge']], ['ciboulette', ['ciboulette']], ['cerfeuil', ['cerfeuil']], ['estragon', ['estragon']],
-    ['petit pois', ['petit pois']],
+    ['petit pois', ['petit pois']], ['haricot vert', ['haricot vert']],
     ['pomme de terre', ['pomme de terre','pommes de terre','grenaille']],
     ['pomme (fruit)', ['pomme verte']], ['aubergine', ['aubergine']],
     ['citronnelle', ['citronnelle']], ['gingembre frais', ['gingembre']],
@@ -695,7 +744,7 @@ const RAYON_MOTS = [
     ['riz', ['riz']],
     ['pâtes', ['pâtes','tagliatelle','penne','pennes','nouille','vermicelle','conchiglione','coquillette','linguine','macaroni','spaghetti','rigatoni','orzo','lasagne','gnocchi','tortellini']],
     ['céréale', ['épeautre','quinoa','boulgour','couscous','semoule','millet']],
-    ['légumineuse', ['lentille','pois chiche','pois cassé','fève','haricot rouge','haricot blanc','haricot vert']],
+    ['légumineuse', ['lentille','pois chiche','pois cassé','fève','haricot rouge','haricot blanc']],
     ['pain', ['pain','pita','chapelure','croûton','tortilla']],
     ['farine', ['farine','maïzena']], ['levure', ['levure']],
   ]],
@@ -713,14 +762,19 @@ const RAYON_MOTS = [
     ['eau', ['eau']], ['glaçons', ['glaçon']],
   ]],
 ];
+function nomAffichage(nom){
+  return nom.replace(/\(.*?\)/g, ' ').replace(/\s+/g, ' ').trim();
+}
 function classifierRayonEtCle(nom){
   const n = nom.toLowerCase();
-  const nNorm = normaliserPourRecherche(nom);
+  const nomPrincipal = nom.replace(/\(.*?\)/g, ' '); // les précisions entre parenthèses (ex. "Ail (sauce tomate)", "Sel (pain à pitas)") ne doivent pas influencer le rayon
+  const nPrincipal = nomPrincipal.toLowerCase();
   for(const [rayon, groupes] of RAYON_MOTS_PRECIS){
     for(const [cle, variantes] of groupes){
-      if(variantes.some(v=>n.includes(v))) return { rayon, cle };
+      if(variantes.some(v=>nPrincipal.includes(v))) return { rayon, cle };
     }
   }
+  const nNorm = normaliserPourRecherche(nomPrincipal);
   for(const [rayon, groupes] of RAYON_MOTS){
     for(const [cle, variantes] of groupes){
       if(variantes.some(v=>contientMot(nNorm, v))) return { rayon, cle };
@@ -787,7 +841,7 @@ function selectionsActuelles(){
       cle: lot.id, label: labelLot(lot), recipeId: state.choixLots[lot.id], portions: portionsLot(lot), lot,
     }));
   }
-  return LETTRES.filter(l=>portions[l]>0).map(l=>({
+  return lettresEffectives().filter(l=>portions[l]>0).map(l=>({
     cle: l, label: `Recette ${l}`, recipeId: state.choix[l], portions: portions[l],
   }));
 }
@@ -802,27 +856,33 @@ function genererListe(){
     recette.ingredients.forEach(ing=>{ occurrences.push({ ing, portions: sel.portions, label: sel.label, recetteNom: recette.nom }); });
   });
 
-  /* Décision de rubrique unique par ingrédient (nom normalisé), calculée une seule fois et
-     réutilisée pour toutes ses occurrences — un même ingrédient ne peut ainsi jamais se
-     retrouver scindé entre deux rubriques selon la recette qui le mentionne. */
+  /* Décision de rubrique unique par ingrédient (nom affiché, sans la précision d'usage entre
+     parenthèses), calculée une seule fois et réutilisée pour toutes ses occurrences — un même
+     ingrédient ne peut ainsi jamais se retrouver scindé entre deux rubriques selon la recette
+     qui le mentionne. */
   const decisionParNom = {};
   occurrences.forEach(({ing})=>{
     if(ing.qte == null) return;
-    const nomNorm = ing.nom.trim().toLowerCase();
+    const nomNorm = normaliserPourRecherche(nomAffichage(ing.nom));
     if(decisionParNom[nomNorm]) return;
-    const estBaseQuelquePart = occurrences.some(o => o.ing.qte!=null && o.ing.nom.trim().toLowerCase()===nomNorm && o.ing.base);
+    const estBaseQuelquePart = occurrences.some(o => o.ing.qte!=null && normaliserPourRecherche(nomAffichage(o.ing.nom))===nomNorm && o.ing.base);
     decisionParNom[nomNorm] = estBaseQuelquePart ? { rayon:'Condiments & basiques', cle: nomNorm } : classifierRayonEtCle(ing.nom);
   });
 
+  /* La précision entre parenthèses (ex. "Ail (sauce tomate)") ne concerne que l'usage dans une
+     recette précise — la provenance affichée sous chaque ligne le dit déjà. Deux occurrences du
+     même ingrédient, dans la même unité — y compris au singulier et au pluriel ("tomate" /
+     "tomates") — sont donc fusionnées en une seule ligne à acheter ; chaque recette continue de
+     préciser sa propre quantité dans sa fiche dédiée. */
   const totaux = {}; const provenance = {}; const sansQuantite = new Set();
   occurrences.forEach(({ing, portions, label, recetteNom})=>{
-    if(ing.qte==null){ sansQuantite.add(ing.nom); return; }
+    if(ing.qte==null){ sansQuantite.add(nomAffichage(ing.nom)); return; }
     const u = baseUnit(ing.unite);
-    const nomNorm = ing.nom.trim().toLowerCase();
+    const nomNorm = normaliserPourRecherche(nomAffichage(ing.nom));
     const key = nomNorm + '|' + u;
     if(!totaux[key]) {
       const { rayon, cle } = decisionParNom[nomNorm];
-      totaux[key] = { nom:ing.nom, unite:u, qte:0, rayon, cle };
+      totaux[key] = { nom:nomAffichage(ing.nom), unite:u, qte:0, rayon, cle };
       provenance[key] = new Set();
     }
     totaux[key].qte += ing.qte * portions;
@@ -870,7 +930,7 @@ function render(){
 function renderRecap(){
   const totaux = computePortionsParLettre();
   return `<div class="recap"><div class="recap-title">Portions à préparer cette semaine</div>
-    <div class="recap-grid">${LETTRES.map(l=>`<div class="recap-item"><div class="letter">${l}</div><div class="val">${fmtPortions(totaux[l])}</div></div>`).join('')}</div>
+    <div class="recap-grid">${lettresEffectives().map(l=>`<div class="recap-item"><div class="letter">${l}</div><div class="val">${fmtPortions(totaux[l])}</div></div>`).join('')}</div>
   </div>`;
 }
 
@@ -1031,7 +1091,7 @@ function renderStep1(){
   });
   html += `</div>`;
   if(state.mode === 'custom'){ initCustomIfNeeded(); html += renderGrilleCustom(); }
-  if(state.mode === 'cas1' || state.mode === 'cas2'){ html += renderRetraitsFixes(); }
+  if(state.mode === 'cas1' || state.mode === 'cas2'){ html += renderScissionOptions(); html += renderRetraitsFixes(); }
   if(state.mode) html += renderRecap();
   html += `<button class="cta" id="toStep2" ${state.mode?'':'disabled'}>Continuer →</button>`;
   html += renderHistoriqueRecap();
@@ -1082,6 +1142,15 @@ function renderGrilleCustom(){
   return html;
 }
 
+function renderScissionOptions(){
+  return `<div style="margin-top:16px;">
+    <p class="sub" style="margin-bottom:8px;">Les recettes A et F couvrent chacune 4 repas d'affilée. Tu peux les scinder en deux recettes plus courtes — cuisinées le même soir, un peu plus de travail actif — pour plus de variété. Sans cocher, une seule recette par lettre, comme d'habitude.</p>
+    <div class="saison-options">
+      <label><input type="checkbox" id="scinderA" ${state.scission.A?'checked':''}> Scinder A (mardi soir → jeudi) en A1 + A2</label>
+      <label><input type="checkbox" id="scinderF" ${state.scission.F?'checked':''}> Scinder F (dimanche soir → mardi suivant) en F1 + F2</label>
+    </div>
+  </div>`;
+}
 function renderRetraitsFixes(){
   const jours = [];
   SLOTS.forEach(s=>{
@@ -1095,7 +1164,7 @@ function renderRetraitsFixes(){
     grp.slots.forEach(s=>{
       const retire = state.retraitsFixes.has(s.id);
       html += `<div class="repas-row ${retire?'retired':''}" style="justify-content:space-between;">
-        <span class="moment">${s.moment}</span><span class="letter-chip">${s.letter}${s.prep?' · prépa':''}</span>
+        <span class="moment">${s.moment}</span><span class="letter-chip">${lettreEffectiveDuSlot(s.id)}${s.prep?' · prépa':''}</span>
         <span style="flex:1;"></span>
         <button class="retire-btn ${retire?'active':''}" data-retire-fixe="${s.id}">${retire?'Repas retiré ✕':'Retirer ce repas'}</button>
       </div>`;
@@ -1170,12 +1239,18 @@ function renderStep2(){
 }
 
 function renderCalendrierLettre(l){
-  const slots = SLOTS.filter(s=>s.letter===l);
-  const rows = slots.map(s=>{
+  const slots = SLOTS.filter(s=>lettreEffectiveDuSlot(s.id)===l);
+  let rows = [];
+  const base = lettreBase(l);
+  if(SCISSION_DEF[base] && state.scission[base] && /2$/.test(l)){
+    const premierSlot = SLOTS.find(s=>s.id===SCISSION_DEF[base].premiereMoitie[0]);
+    rows.push(`<div class="calendrier-row prep">🔪 <strong>${premierSlot.jour} ${premierSlot.moment.toLowerCase()}</strong> — préparée en même temps que ${base}1, la même soirée</div>`);
+  }
+  rows = rows.concat(slots.map(s=>{
     const qte = slotConsumption(s.id);
     if(qte===0) return null;
     return `<div class="calendrier-row ${s.prep?'prep':''}">${s.prep?'🔪':'🍽'} <strong>${s.jour} ${s.moment.toLowerCase()}</strong> — ${fmtPortions(qte)} portion${qte>1?'s':''}${s.prep?' (préparation du lot)':''}</div>`;
-  }).filter(Boolean);
+  }).filter(Boolean));
   return `<div class="calendrier">${rows.join('')}</div>`;
 }
 function renderCalendrierLot(lot){
@@ -1228,12 +1303,12 @@ function renderStep3(){
   }
 
   const portions = computePortionsParLettre();
-  const lettresActives = LETTRES.filter(l=>portions[l] > 0);
+  const lettresActives = lettresEffectives().filter(l=>portions[l] > 0);
   lettresActives.forEach(l=>{
     const options = recettesPourLettre(l);
     const choix = state.choix[l];
     const utiliseeAvant = choix && recettesRecentes().has(choix);
-    const idsAutresLettres = LETTRES.filter(x=>x!==l).map(x=>state.choix[x]).filter(Boolean);
+    const idsAutresLettres = lettresActives.filter(x=>x!==l).map(x=>state.choix[x]).filter(Boolean);
     const dejaCetteSemaine = choix && idsAutresLettres.includes(choix);
     const recetteChoisie = choix ? CORPUS.find(r=>r.id===choix) : null;
     const similaire = recetteChoisie ? recetteSimilairePlusProche(recetteChoisie, idsAutresLettres) : null;
@@ -1260,7 +1335,9 @@ function renderStep4(){
   const { parRayon, sansQuantite } = genererListe();
   const ordreRayons = ['Fruits & légumes','Boucherie & poissonnerie','Crèmerie','Féculents & légumineuses','Épicerie','Condiments & basiques'];
   let html = `<div class="ticket-wrap"><section style="padding-top:8px;"><h2>4. Ticket de courses</h2>
-  <p class="sub">Coche au fur et à mesure. Un ingrédient sous deux formes différentes reste séparé, mais regroupé juste à côté.</p></section>
+  <p class="sub">Coche au fur et à mesure. Un ingrédient sous deux formes différentes reste séparé, mais regroupé juste à côté.</p>
+  <div class="carnet-section-title" style="margin-top:4px;">Emploi du temps de la semaine</div>${renderEmploiDuTemps()}
+  </section>
   <div class="ticket"><h3>Courses — semaine prochaine</h3><div class="meta">${state.mode==='custom' ? 'Semaine sur-mesure' : (state.mode==='cas1'?'Cas 1':'Cas 2')}</div>`;
   ordreRayons.forEach(rayon=>{
     const items = parRayon[rayon];
@@ -1307,12 +1384,25 @@ function construireLignesPlanningActuel(){
     SLOTS.forEach(s=>{
       const qte = slotConsumption(s.id);
       if(qte===0){ lignes.push({ jour:s.jour, moment:s.moment, retire:true }); return; }
-      const recette = CORPUS.find(r=>r.id===state.choix[s.letter]);
-      lignes.push({
+      const le = lettreEffectiveDuSlot(s.id);
+      const recette = CORPUS.find(r=>r.id===state.choix[le]);
+      const ligne = {
         jour:s.jour, moment:s.moment,
-        nomRecette: recette ? `${s.letter} · ${recette.nom}` : '(recette à choisir)',
+        nomRecette: recette ? `${le} · ${recette.nom}` : '(recette à choisir)',
         portions: qte, prep: s.prep, complement: false,
-      });
+      };
+      if(recette && (JOUR_OFFSET_SLOT[s.id]||0) >= 2){
+        const estPoisson = classifierViandes(recette).some(t=>t==='Poisson'||t==='Fruits de mer');
+        ligne.congelation = estPoisson
+          ? "❄️ Poisson : mieux vaut congeler cette portion dès la préparation plutôt que la garder 2 jours au réfrigérateur."
+          : "❄️ Portion consommée 2 jours après la préparation — tu peux la congeler dès la cuisine plutôt que la garder au réfrigérateur.";
+      }
+      const base = s.letter;
+      if(SCISSION_DEF[base] && state.scission[base] && SCISSION_DEF[base].premiereMoitie[0] === s.id){
+        const recetteSeconde = CORPUS.find(r=>r.id===state.choix[base+'2']);
+        ligne.prepSupplementaire = `${base}2 · ${recetteSeconde ? recetteSeconde.nom : '(recette à choisir)'}`;
+      }
+      lignes.push(ligne);
     });
   }
   return lignes;
@@ -1329,7 +1419,9 @@ function renderTablePlanning(lignes){
     if(l.vide || l.retire) return `<span class="planning-empty">Repas retiré / —</span>`;
     if(l.conflit) return `<span class="planning-empty">⚠ Conflit de planification</span>`;
     return `<span class="planning-recipe">${l.nomRecette}${l.prep?' <span class="prep-tag">🔪</span>':''}</span>
-      <span class="planning-qty">${fmtPortions(l.portions)} portion${l.portions>1?'s':''}${l.prep?' préparées':(l.complement?' + complément':' consommées')}</span>`;
+      <span class="planning-qty">${fmtPortions(l.portions)} portion${l.portions>1?'s':''}${l.prep?' préparées':(l.complement?' + complément':' consommées')}</span>
+      ${l.prepSupplementaire ? `<span class="planning-prep-secondaire">🔪 Prépare aussi ce soir : ${l.prepSupplementaire}</span>` : ''}
+      ${l.congelation ? `<span class="planning-congelation">${l.congelation}</span>` : ''}`;
   }
   return `<table class="planning-table"><thead><tr><th>Jour</th><th>Midi</th><th>Soir</th></tr></thead>
     <tbody>${jours.map(g=>`<tr><td class="jour-cell">${g.jour}</td><td>${cellule(g.midi)}</td><td>${cellule(g.soir)}</td></tr>`).join('')}</tbody></table>`;
@@ -1353,6 +1445,7 @@ function renderFicheRecette(recette, p){
     </div>
     ${recette.ustensiles.length ? `<div class="carnet-ustensiles">${recette.ustensiles.map(u=>`<span>${u}</span>`).join('')}</div>` : ''}
     ${recette.conservationNote ? `<div class="carnet-conservation">⚠ ${recette.conservationNote}</div>` : ''}
+    ${recette.compatibleComplementRapide && recette.complementRapideDescription ? `<div class="carnet-conservation">💡 <strong>À chaque repas de reconsommation :</strong> ${recette.complementRapideDescription}</div>` : ''}
     ${depasseCapaciteBol ? `<div class="carnet-conservation">🌀 <strong>Capacité du bol dépassée pour ${fmtPortions(p)} portions</strong> (recette validée jusqu'à ${fmtPortions(recette.seuilPortionsBol)} portions). ${recette.instructionBascule ? `Mode opératoire à suivre : <strong>${recette.instructionBascule.titre}</strong>. ${substituerPlaceholders(recette.instructionBascule.contenu, recette, p)}` : "Prévoir de diviser la préparation en plusieurs cuissons successives."}</div>` : ''}
     <div class="carnet-section-title">Ingrédients <span class="unit">(pour ${fmtPortions(p)} portions)</span></div>
     <div class="carnet-ingredients">
@@ -1500,6 +1593,7 @@ function reinitialiserPourNouvelleSemaine(){
   state.retraitsFixes = new Set(); state.cochees = new Set(); state.sessionId = nouvelIdSemaine();
   state.consultation.etape = 'portions'; state.consultation.recetteId = null;
   state.avertissementAuto = null;
+  state.scission = { A:false, F:false };
 }
 
 function attachEvents(){
@@ -1664,6 +1758,10 @@ function attachEvents(){
   document.querySelectorAll('[data-retire-fixe]').forEach(btn=>{
     btn.addEventListener('click', ()=>{ const id = btn.dataset.retireFixe; if(state.retraitsFixes.has(id)) state.retraitsFixes.delete(id); else state.retraitsFixes.add(id); render(); });
   });
+  const scinderA = document.getElementById('scinderA');
+  if(scinderA) scinderA.addEventListener('change', ()=>{ state.scission.A = scinderA.checked; state.choix = {}; render(); });
+  const scinderF = document.getElementById('scinderF');
+  if(scinderF) scinderF.addEventListener('change', ()=>{ state.scission.F = scinderF.checked; state.choix = {}; render(); });
 
   document.querySelectorAll('[data-selmode]').forEach(btn=>{
     btn.addEventListener('click', ()=>{ state.selectionMode = btn.dataset.selmode; render(); });
